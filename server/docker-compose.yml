@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sitebuilder-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sitebuilder
+      POSTGRES_PASSWORD: sitebuilder_dev
+      POSTGRES_DB: sitebuilder
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./src/database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sitebuilder -d sitebuilder"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+# 对象存储说明：
+# 当前环境 Docker 镜像源无法拉取 minio/mc 与 minio/minio（403 Forbidden），
+# 因此对象存储用 StorageService 的本地磁盘实现（接口与 S3 一致：bucket/key/put）。
+# 生产只需把 StorageService 换成 @aws-sdk/client-s3 指向 MinIO/S3，
+# 并把 PUBLIC_BASE_URL 指向 CDN 域名即可，业务代码零改动。
+
+volumes:
+  pgdata:

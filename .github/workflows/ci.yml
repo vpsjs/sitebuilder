@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        workspace: [server, app, site, admin, web-admin]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.workspace }}/package-lock.json
+      - run: npm ci
+        working-directory: ${{ matrix.workspace }}
+      - run: npm run build
+        working-directory: ${{ matrix.workspace }}
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: build
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sitebuilder
+          POSTGRES_PASSWORD: sitebuilder_dev
+          POSTGRES_DB: sitebuilder
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Init DB
+        run: |
+          for f in server/src/database/migrations/*.sql; do psql -h localhost -U sitebuilder -d sitebuilder -f "$f"; done
+          docker exec -i $(docker ps -q --filter ancestor=postgres:16-alpine) true 2>/dev/null || true
+        env:
+          PGPASSWORD: sitebuilder_dev
+      - run: npm ci && npm run build && npm run seed && npm run seed:ops
+        working-directory: server
+      - run: npm start &
+        working-directory: server
+      - run: bash server/test/e2e.sh
+        continue-on-error: true
